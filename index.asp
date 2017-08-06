@@ -60,12 +60,12 @@ define('mailer', function(require, exports, module) {
 	
 		if (options.from.indexOf('<') !== -1) {
 			gw.from = options.from.substring(options.from.indexOf('<') + 1, options.from.lastIndexOf('>')).trim();
-			gw.fromName = options.from.substr(0, options.from.indexOf('<')).trim();
+			gw.fromName = gw.encodeHeader(options.from.substr(0, options.from.indexOf('<')).trim(), "utf-8");
 		} else {
 			gw.from = options.from;
 		};
 	
-		//gw.MailFrom = ?;
+		if (options.bounced) gw.MailFrom = options.bounced;
 		gw.subject = gw.encodeHeader(options.subject, "utf-8");
 		
 		if (options.html) {
@@ -139,9 +139,32 @@ define('mailer', function(require, exports, module) {
 			return this;
 		},
 		send: function send(options, done) {
-			var error = null;
+			var error = null, reuse = {};
 			
 			try {
+				if (options.html && options.embed) {
+					options.html = options.html.replace(/<img([^>]*)src\=['"]([^'"]+)['"]([^>]*)>/gi, function(a, b, c, d) {
+						options.attachments = options.attachments || [];
+						var cid = 'img'+ options.attachments.length;
+						
+						var match = c.match(new RegExp('^https?:\\/\\/'+ app.request.hostname + (app.request.port === 80 || app.request.port === 443 ? '' : ':'+ app.request.port) +'(.*)$'));
+						if (match) c = Server.mapPath(match[1]);
+						
+						if (reuse[c]) {
+							cid = reuse[c];
+						} else {
+							reuse[c] = cid;
+							options.attachments.push({
+								path: c,
+								filename: require('path').basename(c),
+								cid: cid
+							});
+						};
+						
+						return "<img"+ b +"src=\"cid:"+ cid +"\""+ d +">";
+					});
+				};
+
 				if (options.provider === 'persits') {
 					persits(options);
 				} else {
